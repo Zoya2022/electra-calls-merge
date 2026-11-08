@@ -48,6 +48,8 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
 </div>
 <div id="inCall" class="panel hidden">
 <div class="statusline"><span class="dot live"></span><span>CALL CONNECTED</span></div><div class="timer" id="hostTimer">00:00</div><p class="small">You are live with a viewer.</p>
+<div id="secondIncoming" class="panel hidden"><div class="badge">● SECOND CALLER WAITING</div><p class="small">Accept them without ending your current call.</p><button class="primary" id="acceptSecondBtn">Accept second caller</button></div>
+<div id="conferenceControls" class="panel hidden"><div class="section-title">Conversation mode</div><p class="small">Choose who can hear each other.</p><div class="actions"><button class="secondary" id="talkCaller1Btn">Talk to Caller 1</button><button class="secondary" id="talkCaller2Btn">Talk to Caller 2</button><button class="primary" id="mergeCallersBtn">Merge both calls</button></div><p class="small" id="conferenceStatus">Caller 2 is on hold.</p></div>
 <div class="controls"><button class="control" id="hostMuteBtn">🎙 Mute mic</button><button class="control" id="hostDeafenBtn">🔊 Deafen</button></div>
 <div class="volume"><label for="hostVolume"><span>Speaker volume</span><span id="hostVolumeValue">100%</span></label><input id="hostVolume" type="range" min="0" max="100" value="100"></div>
 <div class="actions"><button class="danger" id="blockHostBtn">End &amp; block caller</button><button class="secondary" id="endHostBtn">End call</button></div>
@@ -69,17 +71,19 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
 <div class="actions" style="justify-content:center"><button class="primary" id="callBtn">Call now</button><button class="danger hidden caller-end" id="endCallerBtn">End call</button></div>
 <p class="small">Allow microphone access when your browser asks. No account or app needed.</p>
 </section>
-<audio id="remoteAudio" autoplay playsinline></audio><audio id="callerRemoteAudio" autoplay playsinline></audio>
+<audio id="remoteAudio" autoplay playsinline></audio><audio id="remoteAudio2" autoplay playsinline></audio><audio id="callerRemoteAudio" autoplay playsinline></audio>
 </div>
 <footer>Browser calling · No viewer account required</footer>
 </main>
 <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+<script src="./conference-audio.js"></script>
 <script>
 (() => {
   const $ = id => document.getElementById(id);
   const params = new URLSearchParams(location.search);
   const hostIdFromLink = params.get('host');
-  let peer = null, incomingCall = null, activeCall = null, waitingCall = null, localStream = null, callerSignal = null, pendingCallerId = null, pendingSignalConn = null, waitingCallerId = null, waitingSignalConn = null;
+  let peer = null, incomingCall = null, activeCall = null, secondCall = null, waitingCall = null, localStream = null, callerSignal = null, pendingCallerId = null, pendingSignalConn = null, waitingCallerId = null, waitingSignalConn = null;
+  let conferenceMixer = null;
   let callerFinalStatus = null, waitingForSignalAck = false;
   const ignoredCallerIds = new Set();
   let timerStarted = 0, timerHandle = null, connected = false, muted = false, deafened = false;
@@ -159,6 +163,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
     deafened = value;
     const audio = $(hostIdFromLink ? 'callerRemoteAudio' : 'remoteAudio');
     audio.muted = value;
+    if (!hostIdFromLink) $('remoteAudio2').muted = value;
     const id = hostIdFromLink ? 'callerDeafenBtn' : 'hostDeafenBtn';
     setText(id, value ? '🔇 Undeafen' : '🔊 Deafen');
     $(id).classList.toggle('active', value);
@@ -180,6 +185,29 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
     localStream = null;
   }
   function callClosed(call) {
+    // A second caller can leave without ending Caller 1.
+    if (call && secondCall === call) {
+      secondCall = null;
+      if (conferenceMixer) conferenceMixer.removeParticipant('caller-2');
+      $('remoteAudio2').srcObject = null;
+      hide('conferenceControls'); hide('secondIncoming');
+      if (conferenceMixer && activeCall) conferenceMixer.setPrivate('caller-1');
+      $('remoteAudio').muted = deafened;
+      setText('conferenceStatus','Caller 2 disconnected. Caller 1 is still live.');
+      return;
+    }
+    // If Caller 1 leaves first, keep Caller 2 live and promote that call.
+    if (call && activeCall === call && secondCall) {
+      activeCall = secondCall; secondCall = null;
+      if (conferenceMixer) { conferenceMixer.removeParticipant('caller-1'); conferenceMixer.setPrivate('caller-2'); }
+      $('remoteAudio').srcObject = $('remoteAudio2').srcObject;
+      $('remoteAudio2').srcObject = null;
+      $('remoteAudio').muted = deafened;
+      hide('conferenceControls'); hide('secondIncoming');
+      setText('hostStatus','Caller 1 disconnected — continuing with Caller 2.');
+      setText('conferenceStatus','Caller 1 disconnected. Caller 2 is now live.');
+      return;
+    }
     // Cleanup must be safe to call from the button, PeerJS close event,
     // and the underlying WebRTC connection-state event.
     // Ignore duplicate close/error callbacks after this call was already cleaned up.
@@ -188,7 +216,8 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
     if (!call || activeCall === call) activeCall = null;
     if (!call || incomingCall === call) incomingCall = null;
     connected = false; stopTimer(); stopLocalStream(); resetLocalControls();
-    $('remoteAudio').srcObject = null; $('callerRemoteAudio').srcObject = null;
+    if (!hostIdFromLink && conferenceMixer) { conferenceMixer.dispose(); conferenceMixer = null; }
+    $('remoteAudio').srcObject = null; $('remoteAudio2').srcObject = null; $('callerRemoteAudio').srcObject = null;
     if (hostIdFromLink) {
       hide('callerInCall'); setCallerActions(false);
       $('callBtn').disabled = false;
@@ -235,6 +264,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
         setText('callerBadge','CONNECTED');
         setText('callerStatus','You are connected. Say hello!');
       } else {
+        if (conferenceMixer) conferenceMixer.addParticipant('caller-1', stream);
         show('inCall'); hide('incoming');
         setText('hostStatus','Caller connected — you are live.');
         $('hostDot').classList.add('live');
@@ -410,7 +440,8 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
               }
               waitingCallerId = conn.peer;
               waitingSignalConn = conn;
-              showHostNotice('🔔 SECOND CALLER WAITING — They will appear here when the current call ends.');
+              showHostNotice('🔔 SECOND CALLER WAITING — You can accept them without ending the current call.');
+              if (waitingCall && waitingCall.peer === conn.peer) show('secondIncoming');
               try { conn.send({ type: 'WAITING' }); } catch {}
               return;
             }
@@ -505,7 +536,8 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
             if (waitingCall === call) waitingCall = null;
           });
           if (waitingCallerId === call.peer) {
-            setText('hostHint','One caller is waiting. They will appear here when the current call ends.');
+            show('secondIncoming');
+            setText('hostHint','One caller is waiting. You can accept them without ending the current call.');
           }
           return;
         }
@@ -626,6 +658,8 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       $('acceptBtn').disabled = true;
       try {
         localStream = await microphone();
+        conferenceMixer = new ElectraConferenceAudio(localStream);
+        await conferenceMixer.resume();
         // PeerJS incoming MediaConnection.open is not a reliable indicator
         // that an unanswered call is still valid. It can be false before
         // answer(), which incorrectly treated every caller as cancelled.
@@ -636,12 +670,77 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
           $('hostDot').classList.add('live');
           return;
         }
-        call.answer(localStream);
+        conferenceMixer.setPrivate('caller-1');
+        call.answer(conferenceMixer.outputFor('caller-1'));
         hide('incoming'); show('inCall'); attachCall(call);
       } catch (error) {
+        if (conferenceMixer) { conferenceMixer.dispose(); conferenceMixer = null; }
         setText('hostStatus',error.message || 'Microphone permission was not granted.');
         call.close(); callClosed(call);
       } finally { $('acceptBtn').disabled = false; }
+    });
+
+    $('acceptSecondBtn').addEventListener('click', async () => {
+      const call = waitingCall;
+      if (!call || !waitingCallerId || call.peer !== waitingCallerId || !conferenceMixer || !localStream) return;
+      $('acceptSecondBtn').disabled = true;
+      try {
+        secondCall = call; waitingCall = null;
+        call.answer(conferenceMixer.outputFor('caller-2'));
+        call.on('stream', stream => {
+          if (secondCall !== call && activeCall !== call) return;
+          conferenceMixer.addParticipant('caller-2', stream);
+          if (secondCall === call) {
+            $('remoteAudio2').srcObject = stream;
+            $('remoteAudio2').volume = Number($('hostVolume').value) / 100;
+            $('remoteAudio2').muted = true;
+            $('remoteAudio2').play().catch(() => {});
+            conferenceMixer.setPrivate('caller-1');
+            $('remoteAudio').muted = deafened;
+            show('conferenceControls'); hide('secondIncoming');
+            setText('conferenceStatus','Caller 2 is on hold (silence).');
+            setText('hostStatus','Two callers connected — choose a conversation mode.');
+          } else {
+            $('remoteAudio').srcObject = stream;
+            $('remoteAudio').muted = deafened;
+            $('remoteAudio').play().catch(() => {});
+          }
+        });
+        call.on('close', () => callClosed(call));
+        call.on('error', () => callClosed(call));
+        const pc = call.peerConnection;
+        if (pc) {
+          const check = () => { if (pc.connectionState === 'failed' || pc.connectionState === 'closed' || pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') callClosed(call); };
+          pc.addEventListener('connectionstatechange', check);
+          pc.addEventListener('iceconnectionstatechange', check);
+        }
+        waitingCallerId = null;
+        if (waitingSignalConn) { try { waitingSignalConn.close(); } catch {} waitingSignalConn = null; }
+      } catch (error) {
+        setText('hostStatus','Could not accept second caller: ' + (error.message || 'connection error'));
+        secondCall = null; waitingCall = call;
+      } finally { $('acceptSecondBtn').disabled = false; }
+    });
+    $('talkCaller1Btn').addEventListener('click', () => {
+      if (!conferenceMixer || !secondCall) return;
+      conferenceMixer.setPrivate('caller-1');
+      $('remoteAudio').muted = deafened;
+      $('remoteAudio2').muted = true;
+      setText('conferenceStatus','Caller 1 is live. Caller 2 is on hold (silence).');
+    });
+    $('talkCaller2Btn').addEventListener('click', () => {
+      if (!conferenceMixer || !secondCall) return;
+      conferenceMixer.setPrivate('caller-2');
+      $('remoteAudio').muted = true;
+      $('remoteAudio2').muted = deafened;
+      setText('conferenceStatus','Caller 2 is live. Caller 1 is on hold (silence).');
+    });
+    $('mergeCallersBtn').addEventListener('click', () => {
+      if (!conferenceMixer || !secondCall) return;
+      conferenceMixer.setConference();
+      $('remoteAudio').muted = deafened;
+      $('remoteAudio2').muted = deafened;
+      setText('conferenceStatus','Both callers and the host are connected in the conference.');
     });
     $('rejectBtn').addEventListener('click', () => {
       const call = incomingCall;
@@ -666,13 +765,19 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
         blockedCallerIds.push(call.peer);
         localStorage.setItem('electraBlockedCallerIds', JSON.stringify(blockedCallerIds));
       }
+      const extra = secondCall;
+      secondCall = null;
+      if (extra) { try { extra.close(); } catch {} }
       call.close();
       callClosed(call);
       setText('hostStatus','Caller ended and blocked on this browser.');
     });
     $('endHostBtn').addEventListener('click', () => {
+      const extra = secondCall;
       const call = activeCall;
-      if (call) call.close();
+      secondCall = null;
+      if (extra) { try { extra.close(); } catch {} }
+      if (call) { try { call.close(); } catch {} }
       callClosed(call || null);
     });
   }
