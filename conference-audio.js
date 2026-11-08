@@ -166,10 +166,17 @@
         try { hold.gain.gain.setTargetAtTime(0, this.context.currentTime, 0.035); } catch {}
       }
       if (hold.source) {
-        try { hold.source.stop(this.context.currentTime + 0.12); } catch {}
-        try { hold.source.disconnect(); } catch {}
-      }
-      if (hold.gain) {
+        const source = hold.source;
+        const gain = hold.gain;
+        source.onended = () => {
+          try { source.disconnect(); } catch {}
+          if (gain) { try { gain.disconnect(); } catch {} }
+        };
+        try { source.stop(this.context.currentTime + 0.18); } catch {
+          try { source.disconnect(); } catch {}
+          if (gain) { try { gain.disconnect(); } catch {} }
+        }
+      } else if (hold.gain) {
         try { hold.gain.disconnect(); } catch {}
       }
       output.hold = null;
