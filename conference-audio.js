@@ -1,6 +1,5 @@
-/* Electra Explains — isolated conference audio mixer.
- * This file is experimental and is only used by call-merge-test.
- * It does not change the production main branch.
+/* Electra Explains — conference audio mixer for the isolated merge repository.
+ * Hold music is routed only to the caller currently on hold.
  */
 (() => {
   'use strict';
