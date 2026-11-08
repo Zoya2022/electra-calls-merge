@@ -5,6 +5,15 @@
 (() => {
   'use strict';
 
+  const HOLD_MUSIC_TRACKS = [
+    // Purrple Cat — CC BY 4.0; licensed for streams and commercial use with credit.
+    'https://purrplecat-audio.pages.dev/audio/city-nights-3/01-fog-blanket.mp3',
+    'https://purrplecat-audio.pages.dev/audio/city-nights-3/03-window-seat.mp3',
+    'https://purrplecat-audio.pages.dev/audio/city-nights-3/04-corner-store.mp3',
+    'https://purrplecat-audio.pages.dev/audio/city-nights-3/08-half-awake.mp3',
+    'https://purrplecat-audio.pages.dev/audio/city-nights-3/13-empty-sidewalks.mp3'
+  ];
+
   class ElectraConferenceAudio {
     constructor(hostStream) {
       const AudioContextClass = window.AudioContext || window.webkitAudioContext;
@@ -16,6 +25,8 @@
       this.mode = 'private';
       this.activeId = null;
       this.disposed = false;
+      this.trackBuffers = new Map();
+      this.lastHoldTrackIndex = -1;
     }
 
     async resume() {
@@ -104,20 +115,64 @@
     }
 
     _startHoldMusic(output) {
-      // No generated audio on held lines. A held caller hears silence only;
-      // this avoids any tone/music being mistaken for call audio.
-      return;
+      // A held caller hears one of five softly mixed instrumental tracks.
+      // Music is routed only to that caller's outgoing stream, never to the
+      // host or the caller who is currently speaking.
+      if (output.hold || this.disposed) return;
+      const hold = { source: null, gain: null, cancelled: false };
+      output.hold = hold;
+
+      let index = Math.floor(Math.random() * HOLD_MUSIC_TRACKS.length);
+      if (HOLD_MUSIC_TRACKS.length > 1 && index === this.lastHoldTrackIndex) {
+        index = (index + 1 + Math.floor(Math.random() * (HOLD_MUSIC_TRACKS.length - 1))) % HOLD_MUSIC_TRACKS.length;
+      }
+      this.lastHoldTrackIndex = index;
+      const url = HOLD_MUSIC_TRACKS[index];
+
+      let bufferPromise = this.trackBuffers.get(url);
+      if (!bufferPromise) {
+        bufferPromise = fetch(url, { mode: 'cors' })
+          .then(response => {
+            if (!response.ok) throw new Error('Hold music download failed.');
+            return response.arrayBuffer();
+          })
+          .then(data => this.context.decodeAudioData(data));
+        this.trackBuffers.set(url, bufferPromise);
+      }
+
+      bufferPromise.then(buffer => {
+        if (this.disposed || hold.cancelled || output.hold !== hold) return;
+        const source = this.context.createBufferSource();
+        const gain = this.context.createGain();
+        source.buffer = buffer;
+        source.loop = true;
+        gain.gain.value = 0;
+        source.connect(gain);
+        gain.connect(output.destination);
+        hold.source = source;
+        hold.gain = gain;
+        source.start();
+        gain.gain.setTargetAtTime(0.14, this.context.currentTime, 0.8);
+      }).catch(error => {
+        if (output.hold === hold) output.hold = null;
+        console.warn('Electra hold music unavailable; keeping the line silent.', error);
+      });
     }
 
     _stopHoldMusic(output) {
-      if (!output.hold) return;
-      clearInterval(output.hold.phraseTimer);
-      for (const oscillator of output.hold.oscillators || []) {
-        try { oscillator.stop(); oscillator.disconnect(); } catch {}
+      const hold = output.hold;
+      if (!hold) return;
+      hold.cancelled = true;
+      if (hold.gain) {
+        try { hold.gain.gain.setTargetAtTime(0, this.context.currentTime, 0.035); } catch {}
       }
-      try { output.hold.envelope?.disconnect(); } catch {}
-      try { output.hold.source?.disconnect(); } catch {}
-      try { output.hold.master?.disconnect(); } catch {}
+      if (hold.source) {
+        try { hold.source.stop(this.context.currentTime + 0.12); } catch {}
+        try { hold.source.disconnect(); } catch {}
+      }
+      if (hold.gain) {
+        try { hold.gain.disconnect(); } catch {}
+      }
       output.hold = null;
     }
 
