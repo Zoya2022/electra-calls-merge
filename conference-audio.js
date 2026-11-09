@@ -98,18 +98,14 @@
       // This also covers the real connection order where Caller 1's output
       // exists before their incoming stream, and Caller 2's output is created
       // later while Caller 1 is already connected.
-      for (const output of this.outputs.values()) {
+      for (const [targetId, output] of this.outputs) {
         for (const gain of output.participantGains.values()) {
           try { gain.disconnect(); } catch {}
         }
         output.participantGains.clear();
         for (const id of this.participants.keys()) {
           // Each caller must hear the other caller, never their own return.
-          for (const targetId of this.outputs.keys()) {
-            if (targetId === [...this.outputs.entries()].find(([, value]) => value === output)?.[0]) {
-              this._connectParticipant(id, targetId, output);
-            }
-          }
+          this._connectParticipant(id, targetId, output);
         }
       }
       this.mode = 'conference';
