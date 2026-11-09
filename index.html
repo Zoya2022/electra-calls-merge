@@ -259,7 +259,26 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
     if (!call || activeCall === call) activeCall = null;
     if (!call || incomingCall === call) incomingCall = null;
     connected = false; stopTimer(); stopLocalStream(); resetLocalControls();
-    if (!hostIdFromLink && conferenceMixer) { conferenceMixer.dispose(); conferenceMixer = null; }
+    if (!hostIdFromLink) {
+      // A full end of the active conversation must also clear every
+      // conference-only reference and panel. Otherwise the next single
+      // caller can inherit the previous session's "Caller 2 on hold" UI.
+      secondCall = null;
+      waitingCall = null;
+      waitingCallerId = null;
+      if (waitingSignalConn) { try { waitingSignalConn.close(); } catch {} waitingSignalConn = null; }
+      if (conferenceMixer) { conferenceMixer.dispose(); conferenceMixer = null; }
+      $('remoteAudio').muted = false;
+      $('remoteAudio2').muted = false;
+      $('remoteAudio2').volume = 1;
+      hide('conferenceControls');
+      hide('secondIncoming');
+      $('acceptSecondBtn').disabled = false;
+      $('talkCaller1Btn').classList.remove('active');
+      $('talkCaller2Btn').classList.remove('active');
+      $('mergeCallersBtn').classList.remove('active');
+      setText('conferenceStatus','Caller 2 is on hold.');
+    }
     $('remoteAudio').srcObject = null; $('remoteAudio2').srcObject = null; $('callerRemoteAudio').srcObject = null;
     if (hostIdFromLink) {
       hide('callerInCall'); setCallerActions(false);
