@@ -346,6 +346,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
     $('callBtn').addEventListener('click', async () => {
       callerFinalStatus = null;
       waitingForSignalAck = false;
+      $('endCallerBtn').disabled = false;
       $('callBtn').disabled = true;
       setCallerActions(true);
       try {
