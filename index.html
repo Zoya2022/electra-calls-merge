@@ -788,6 +788,26 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       if (!incomingCall || incomingCall.peer !== pendingCallerId) return;
       clearHostNotice();
       const call = incomingCall;
+      // A fresh first-caller session always starts with a clean conference UI.
+      // This is a defensive reset in addition to callClosed() teardown, so a
+      // previous Caller 2 can never leave merge controls on the next solo call.
+      if (!activeCall && !secondCall) {
+        if (conferenceMixer) { conferenceMixer.dispose(); conferenceMixer = null; }
+        waitingCall = null;
+        waitingCallerId = null;
+        if (waitingSignalConn) { try { waitingSignalConn.close(); } catch {} waitingSignalConn = null; }
+        $('remoteAudio2').srcObject = null;
+        $('remoteAudio2').muted = false;
+        $('remoteAudio2').volume = 1;
+        $('remoteAudio').muted = false;
+        hide('conferenceControls');
+        hide('secondIncoming');
+        $('acceptSecondBtn').disabled = false;
+        $('talkCaller1Btn').classList.remove('active');
+        $('talkCaller2Btn').classList.remove('active');
+        $('mergeCallersBtn').classList.remove('active');
+        setText('conferenceStatus','Caller 2 is on hold.');
+      }
       // Move the pending call into activeCall immediately so a later caller
       // is not blocked by a stale incomingCall reference.
       incomingCall = null;
