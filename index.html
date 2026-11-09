@@ -384,7 +384,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
             show('endCallerBtn');
           });
           thisSignal.on('data', message => {
-            if (!isCurrentAttempt() || callerSignal !== thisSignal || !message || typeof message !== 'object') return;
+            if ((!isCurrentAttempt() && message?.type !== 'CANCEL_ACK') || callerSignal !== thisSignal || !message || typeof message !== 'object') return;
             if (message.type === 'REJECT') {
               callerFinalStatus = { badge: 'CALL DECLINED', text: 'The host declined your call. You can try again.' };
               waitingForSignalAck = true;
