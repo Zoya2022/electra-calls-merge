@@ -895,6 +895,9 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       conferenceMixer.setPrivate('caller-1');
       $('remoteAudio').muted = deafened;
       $('remoteAudio2').muted = true;
+      $('talkCaller1Btn').classList.add('active');
+      $('talkCaller2Btn').classList.remove('active');
+      $('mergeCallersBtn').classList.remove('active');
       setText('conferenceStatus','Caller 1 is live. Caller 2 is on hold (silence).');
     });
     $('talkCaller2Btn').addEventListener('click', () => {
@@ -902,6 +905,9 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       conferenceMixer.setPrivate('caller-2');
       $('remoteAudio').muted = true;
       $('remoteAudio2').muted = deafened;
+      $('talkCaller1Btn').classList.remove('active');
+      $('talkCaller2Btn').classList.add('active');
+      $('mergeCallersBtn').classList.remove('active');
       setText('conferenceStatus','Caller 2 is live. Caller 1 is on hold (silence).');
     });
     $('mergeCallersBtn').addEventListener('click', () => {
@@ -909,6 +915,9 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       conferenceMixer.setConference();
       $('remoteAudio').muted = deafened;
       $('remoteAudio2').muted = deafened;
+      $('talkCaller1Btn').classList.remove('active');
+      $('talkCaller2Btn').classList.remove('active');
+      $('mergeCallersBtn').classList.add('active');
       setText('conferenceStatus','Both callers and the host are connected in the conference.');
     });
     $('rejectBtn').addEventListener('click', () => {
