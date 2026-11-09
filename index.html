@@ -855,14 +855,19 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
           if (secondCall === call) {
             $('remoteAudio2').srcObject = stream;
             $('remoteAudio2').volume = Number($('hostVolume').value) / 100;
-            $('remoteAudio2').muted = true;
+            $('remoteAudio2').muted = deafened;
             $('remoteAudio2').play().catch(() => {});
-            conferenceMixer.setPrivate('caller-1');
-            $('remoteAudio').muted = deafened;
+            // Accepting Caller 2 automatically switches the live line to them.
+            // Caller 1 is held until the host switches back or merges both calls.
+            conferenceMixer.setPrivate('caller-2');
+            $('remoteAudio').muted = true;
+            $('talkCaller1Btn').classList.remove('active');
+            $('talkCaller2Btn').classList.add('active');
+            $('mergeCallersBtn').classList.remove('active');
             show('conferenceControls'); hide('secondIncoming');
             clearHostNotice();
-            setText('conferenceStatus','Caller 2 is on hold (silence).');
-            setText('hostStatus','Two callers connected — choose a conversation mode.');
+            setText('conferenceStatus','Caller 2 is live. Caller 1 is on hold (silence).');
+            setText('hostStatus','Caller 2 is now live — Caller 1 is on hold.');
           } else {
             $('remoteAudio').srcObject = stream;
             $('remoteAudio').muted = deafened;
