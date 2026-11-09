@@ -194,14 +194,6 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       if (call && activeCall === call) activeCall = null;
       if (!call) activeCall = null;
       if (!call || incomingCall === call) incomingCall = null;
-      if (call) {
-        const signal = activeSignalConns.get(call.peer);
-        if (signal) {
-          try { if (signal.open) signal.send({ type: 'CALL_ENDED' }); } catch {}
-          try { signal.close(); } catch {}
-          activeSignalConns.delete(call.peer);
-        }
-      }
       connected = false;
       stopTimer();
       stopLocalStream();
@@ -224,6 +216,14 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       return;
     }
     // A second caller can leave without ending Caller 1.
+    if (call) {
+      const signal = activeSignalConns.get(call.peer);
+      if (signal) {
+        try { if (signal.open) signal.send({ type: 'CALL_ENDED' }); } catch {}
+        try { signal.close(); } catch {}
+        activeSignalConns.delete(call.peer);
+      }
+    }
     if (call && secondCall === call) {
       secondCall = null;
       if (conferenceMixer) conferenceMixer.removeParticipant('caller-2');
