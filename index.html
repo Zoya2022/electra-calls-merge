@@ -190,7 +190,9 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
     // The signaling channel is the fallback for pre-answer cancellation/rejection
     // and for a host ending an already connected call.
     if (hostIdFromLink) {
-      if (call && activeCall && activeCall !== call) return;
+      // Ignore late close/stream callbacks from a call that was already cancelled
+      // or superseded. A null activeCall means this call no longer owns the UI.
+      if (call && activeCall !== call) return;
       if (call && activeCall === call) activeCall = null;
       if (!call) activeCall = null;
       if (!call || incomingCall === call) incomingCall = null;
@@ -295,8 +297,14 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
   }
   function attachCall(call) {
     activeCall = call;
+    const callerAttemptAtAttach = callerAttemptId;
+    const isThisCallCurrent = () => !hostIdFromLink ||
+      (callerAttemptAtAttach === callerAttemptId && activeCall === call);
     const audio = $(hostIdFromLink ? 'callerRemoteAudio' : 'remoteAudio');
     call.on('stream', stream => {
+      // A WebRTC stream may arrive after End Call. Never let an old attempt
+      // bring the caller screen back or restart its timer.
+      if (!isThisCallCurrent()) return;
       audio.srcObject = stream;
       audio.play().catch(() => {});
       connected = true; startTimer();
@@ -313,6 +321,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
     });
     call.on('close', () => callClosed(call));
     call.on('error', err => {
+      if (!isThisCallCurrent()) return;
       if (hostIdFromLink) setText('callerStatus','Call error: ' + err.message);
       else setText('hostStatus','Call error: ' + err.message);
       callClosed(call);
@@ -324,11 +333,13 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       if (!pc || call._electraStateWatcherAttached) return;
       call._electraStateWatcherAttached = true;
       pc.addEventListener('connectionstatechange', () => {
+        if (!isThisCallCurrent()) return;
         if (pc.connectionState === 'closed' || pc.connectionState === 'failed') {
           callClosed(call);
         }
       });
       pc.addEventListener('iceconnectionstatechange', () => {
+        if (!isThisCallCurrent()) return;
         if (pc.iceConnectionState === 'closed' || pc.iceConnectionState === 'failed') {
           callClosed(call);
         }
