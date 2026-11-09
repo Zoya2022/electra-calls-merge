@@ -521,18 +521,13 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
               setText('hostStatus','Incoming call — accept or reject.');
             }
           } else if (message.type === 'CANCEL') {
-            // Handle cancellation even if the media call or CALL_REQUEST has
-            // not reached the host yet. This prevents a caller from remaining
-            // in a phantom "Calling host" state after an early hang-up.
+            // Handle cancellation even if CALL_REQUEST/media signaling is still
+            // arriving. Always acknowledge this caller's own signal connection.
             ignoredCallerIds.add(conn.peer);
             const cancelledActive = activeCall?.peer === conn.peer ? activeCall
-              : secondCall?.peer === conn.peer ? secondCall
-              : waitingCall?.peer === conn.peer ? waitingCall
-              : incomingCall?.peer === conn.peer ? incomingCall : null;
-            if (activeCall?.peer === conn.peer) activeCall = null;
-            if (secondCall?.peer === conn.peer) secondCall = null;
-            if (waitingCall?.peer === conn.peer) waitingCall = null;
-            if (incomingCall?.peer === conn.peer) incomingCall = null;
+              : secondCall?.peer === conn.peer ? secondCall : null;
+            const cancelledWaiting = waitingCall?.peer === conn.peer ? waitingCall : null;
+            const cancelledIncoming = incomingCall?.peer === conn.peer ? incomingCall : null;
             if (pendingCallerId === conn.peer) {
               pendingCallerId = null;
               if (pendingSignalConn === conn) pendingSignalConn = null;
@@ -544,17 +539,20 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
               if (waitingSignalConn === conn) waitingSignalConn = null;
               hide('secondIncoming');
             }
-            try { if (cancelledActive) cancelledActive.close(); } catch {}
-            if (cancelledActive && (cancelledActive === activeCall || cancelledActive === secondCall)) {
-              callClosed(cancelledActive);
-            }
-            if (!activeCall) {
-              setText('hostStatus','Caller cancelled — waiting for the next caller.');
-              $('hostDot').classList.add('live');
-            } else if (cancelledActive) {
-              setText('conferenceStatus','A caller cancelled. The other caller is still connected.');
-            }
             try { if (conn.open) conn.send({ type: 'CANCEL_ACK' }); } catch {}
+            if (cancelledActive) {
+              try { cancelledActive.close(); } catch {}
+              callClosed(cancelledActive);
+            } else {
+              if (cancelledWaiting === waitingCall) waitingCall = null;
+              if (cancelledIncoming === incomingCall) incomingCall = null;
+              try { if (cancelledWaiting) cancelledWaiting.close(); } catch {}
+              try { if (cancelledIncoming) cancelledIncoming.close(); } catch {}
+              if (!activeCall) {
+                setText('hostStatus','Caller cancelled — waiting for the next caller.');
+                $('hostDot').classList.add('live');
+              }
+            }
           } else if (message.type === 'CANCEL_DONE' || message.type === 'REJECT_ACK' || message.type === 'BUSY_ACK') {
             if (pendingSignalConn === conn) pendingSignalConn = null;
             activeSignalConns.delete(conn.peer);
