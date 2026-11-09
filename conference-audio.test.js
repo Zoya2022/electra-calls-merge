@@ -40,11 +40,13 @@ class FakeAudioContext {
   assert.equal(typeof Mixer, 'function', 'mixer class should be exposed');
 
   const mixer = new Mixer({ id: 'host-mic' });
-  mixer.addParticipant('caller-1', { id: 'caller-1-mic' });
-  mixer.addParticipant('caller-2', { id: 'caller-2-mic' });
-  mixer.setPrivate('caller-1');
+  // Match the real PeerJS order: Caller 1's output is created before their
+  // stream arrives; Caller 2's output is created after Caller 1 is connected.
   mixer.outputFor('caller-1');
+  mixer.addParticipant('caller-1', { id: 'caller-1-mic' });
+  mixer.setPrivate('caller-1');
   mixer.outputFor('caller-2');
+  mixer.addParticipant('caller-2', { id: 'caller-2-mic' });
   await new Promise(resolve => setTimeout(resolve, 0));
 
   const first = mixer.outputs.get('caller-1');
@@ -57,6 +59,10 @@ class FakeAudioContext {
   assert.ok(second.hold.gain.connections.includes(second.destination), 'music should route only into caller 2 output');
   assert.equal(first.participantGains.get('caller-2').gain.value, 0, 'caller 1 must not hear caller 2 in private mode');
   assert.equal(second.participantGains.get('caller-1').gain.value, 0, 'caller 2 must not hear caller 1 in private mode');
+  assert.ok(mixer.participants.get('caller-2').source.connections.includes(first.participantGains.get('caller-2')), 'caller 2 source must feed caller 1 output');
+  assert.ok(first.participantGains.get('caller-2').connections.includes(first.destination), 'caller 2 audio must reach caller 1 destination');
+  assert.ok(mixer.participants.get('caller-1').source.connections.includes(second.participantGains.get('caller-1')), 'caller 1 source must feed caller 2 output');
+  assert.ok(second.participantGains.get('caller-1').connections.includes(second.destination), 'caller 1 audio must reach caller 2 destination');
 
   mixer.setPrivate('caller-2');
   await new Promise(resolve => setTimeout(resolve, 0));
