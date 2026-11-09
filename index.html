@@ -185,6 +185,35 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
     localStream = null;
   }
   function callClosed(call) {
+    // Caller-side teardown is deliberately independent from PeerJS close timing.
+    // The signaling channel is the fallback for pre-answer cancellation/rejection
+    // and for a host ending an already connected call.
+    if (hostIdFromLink) {
+      if (call && activeCall && activeCall !== call) return;
+      if (call && activeCall === call) activeCall = null;
+      if (!call) activeCall = null;
+      if (!call || incomingCall === call) incomingCall = null;
+      connected = false;
+      stopTimer();
+      stopLocalStream();
+      resetLocalControls();
+      $('callerRemoteAudio').srcObject = null;
+      hide('callerInCall');
+      setCallerActions(false);
+      $('callBtn').disabled = false;
+      const finalStatus = callerFinalStatus || {
+        badge: 'CALL ENDED',
+        text: 'The call has ended. You can use this same link to call again.'
+      };
+      setText('callerBadge', finalStatus.badge);
+      setText('callerStatus', finalStatus.text);
+      if (peer && !waitingForSignalAck) {
+        peer.destroy();
+        peer = null;
+        callerSignal = null;
+      }
+      return;
+    }
     // A second caller can leave without ending Caller 1.
     if (call && secondCall === call) {
       secondCall = null;
@@ -225,7 +254,11 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       setText('callerStatus','Call ended. You can use this same link to call again.');
       if (peer && !waitingForSignalAck) { peer.destroy(); peer = null; }
     } else {
-      if (pendingSignalConn) { try { pendingSignalConn.close(); } catch {} pendingSignalConn = null; }
+      if (pendingSignalConn) {
+        try { if (pendingSignalConn.open) pendingSignalConn.send({ type: 'CALL_ENDED' }); } catch {}
+        try { pendingSignalConn.close(); } catch {}
+        pendingSignalConn = null;
+      }
       pendingCallerId = null;
       hide('inCall'); hide('incoming');
       if (waitingCallerId && waitingCall && waitingCall.peer === waitingCallerId) {
@@ -349,6 +382,11 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
               callClosed(call || null);
             } else if (message.type === 'CANCEL_ACK') {
               try { callerSignal.send({ type: 'CANCEL_DONE' }); } catch {}
+              callerFinalStatus = { badge: 'CALL ENDED', text: 'You ended the call. You can call again using this link.' };
+              callClosed(activeCall || null);
+            } else if (message.type === 'CALL_ENDED') {
+              callerFinalStatus = { badge: 'CALL ENDED', text: 'The host ended the call. You can use this same link to call again.' };
+              callClosed(activeCall || null);
             }
           });
           callerSignal.on('close', () => {
@@ -688,6 +726,9 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       $('acceptSecondBtn').disabled = true;
       try {
         secondCall = call; waitingCall = null;
+        hide('secondIncoming');
+        setText('hostHint','');
+        if (hostNoticeTimer) { clearTimeout(hostNoticeTimer); hostNoticeTimer = null; }
         call.answer(conferenceMixer.outputFor('caller-2'));
         call.on('stream', stream => {
           if (secondCall !== call && activeCall !== call) return;
@@ -700,6 +741,8 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
             conferenceMixer.setPrivate('caller-1');
             $('remoteAudio').muted = deafened;
             show('conferenceControls'); hide('secondIncoming');
+            setText('hostHint',''); 
+            if (hostNoticeTimer) { clearTimeout(hostNoticeTimer); hostNoticeTimer = null; }
             setText('conferenceStatus','Caller 2 is on hold (silence).');
             setText('hostStatus','Two callers connected — choose a conversation mode.');
           } else {
