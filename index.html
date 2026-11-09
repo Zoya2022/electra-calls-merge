@@ -336,6 +336,8 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
     $('callerMuteBtn').addEventListener('click', () => setMicMuted(!muted));
     $('callerDeafenBtn').addEventListener('click', () => setDeafened(!deafened));
     $('callBtn').addEventListener('click', async () => {
+      callerFinalStatus = null;
+      waitingForSignalAck = false;
       $('callBtn').disabled = true;
       setCallerActions(true);
       try {
