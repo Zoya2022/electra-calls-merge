@@ -83,6 +83,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
   const params = new URLSearchParams(location.search);
   const hostIdFromLink = params.get('host');
   let peer = null, incomingCall = null, activeCall = null, secondCall = null, waitingCall = null, localStream = null, callerSignal = null, pendingCallerId = null, pendingSignalConn = null, waitingCallerId = null, waitingSignalConn = null;
+  const activeSignalConns = new Map();
   let conferenceMixer = null;
   let callerFinalStatus = null, waitingForSignalAck = false;
   const ignoredCallerIds = new Set();
@@ -193,6 +194,14 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       if (call && activeCall === call) activeCall = null;
       if (!call) activeCall = null;
       if (!call || incomingCall === call) incomingCall = null;
+      if (call) {
+        const signal = activeSignalConns.get(call.peer);
+        if (signal) {
+          try { if (signal.open) signal.send({ type: 'CALL_ENDED' }); } catch {}
+          try { signal.close(); } catch {}
+          activeSignalConns.delete(call.peer);
+        }
+      }
       connected = false;
       stopTimer();
       stopLocalStream();
@@ -254,11 +263,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       setText('callerStatus','Call ended. You can use this same link to call again.');
       if (peer && !waitingForSignalAck) { peer.destroy(); peer = null; }
     } else {
-      if (pendingSignalConn) {
-        try { if (pendingSignalConn.open) pendingSignalConn.send({ type: 'CALL_ENDED' }); } catch {}
-        try { pendingSignalConn.close(); } catch {}
-        pendingSignalConn = null;
-      }
+      if (pendingSignalConn) { try { pendingSignalConn.close(); } catch {} pendingSignalConn = null; }
       pendingCallerId = null;
       hide('inCall'); hide('incoming');
       if (waitingCallerId && waitingCall && waitingCall.peer === waitingCallerId) {
@@ -472,6 +477,8 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
         conn.on('data', message => {
           if (!message || typeof message !== 'object') return;
           if (message.type === 'CALL_REQUEST') {
+            // Ignore delayed/reordered requests for a caller already accepted.
+            if ((activeCall && activeCall.peer === conn.peer) || (secondCall && secondCall.peer === conn.peer)) return;
             if (activeCall) {
               if (waitingCallerId && waitingCallerId !== conn.peer) {
                 ignoredCallerIds.add(conn.peer);
@@ -497,6 +504,11 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
               $('acceptBtn').disabled = false;
               setText('hostStatus','Incoming call — accept or reject.');
             }
+          } else if (message.type === 'CANCEL' && (activeCall?.peer === conn.peer || secondCall?.peer === conn.peer)) {
+            const cancelledActive = activeCall?.peer === conn.peer ? activeCall : secondCall;
+            try { conn.send({ type: 'CANCEL_ACK' }); } catch {}
+            try { cancelledActive.close(); } catch {}
+            callClosed(cancelledActive);
           } else if (message.type === 'CANCEL' && waitingCallerId === conn.peer) {
             ignoredCallerIds.add(conn.peer);
             const cancelledWaiting = waitingCall && waitingCall.peer === conn.peer ? waitingCall : null;
@@ -519,6 +531,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
             try { conn.send({ type: 'CANCEL_ACK' }); } catch {}
           } else if (message.type === 'CANCEL_DONE' || message.type === 'REJECT_ACK' || message.type === 'BUSY_ACK') {
             if (pendingSignalConn === conn) pendingSignalConn = null;
+            activeSignalConns.delete(conn.peer);
             try { conn.close(); } catch {}
           }
         });
@@ -695,7 +708,8 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       // is not blocked by a stale incomingCall reference.
       incomingCall = null;
       pendingCallerId = null;
-      if (pendingSignalConn) { try { pendingSignalConn.close(); } catch {} pendingSignalConn = null; }
+      if (pendingSignalConn) activeSignalConns.set(call.peer, pendingSignalConn);
+      pendingSignalConn = null;
       activeCall = call;
       $('acceptBtn').disabled = true;
       try {
@@ -729,8 +743,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       try {
         secondCall = call; waitingCall = null;
         hide('secondIncoming');
-        setText('hostHint','');
-        if (hostNoticeTimer) { clearTimeout(hostNoticeTimer); hostNoticeTimer = null; }
+        clearHostNotice();
         call.answer(conferenceMixer.outputFor('caller-2'));
         call.on('stream', stream => {
           if (secondCall !== call && activeCall !== call) return;
@@ -743,8 +756,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
             conferenceMixer.setPrivate('caller-1');
             $('remoteAudio').muted = deafened;
             show('conferenceControls'); hide('secondIncoming');
-            setText('hostHint',''); 
-            if (hostNoticeTimer) { clearTimeout(hostNoticeTimer); hostNoticeTimer = null; }
+            clearHostNotice();
             setText('conferenceStatus','Caller 2 is on hold (silence).');
             setText('hostStatus','Two callers connected — choose a conversation mode.');
           } else {
@@ -762,7 +774,8 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
           pc.addEventListener('iceconnectionstatechange', check);
         }
         waitingCallerId = null;
-        if (waitingSignalConn) { try { waitingSignalConn.close(); } catch {} waitingSignalConn = null; }
+        if (waitingSignalConn) activeSignalConns.set(call.peer, waitingSignalConn);
+        waitingSignalConn = null;
       } catch (error) {
         setText('hostStatus','Could not accept second caller: ' + (error.message || 'connection error'));
         secondCall = null; waitingCall = call;
