@@ -209,9 +209,12 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       setText('callerBadge', finalStatus.badge);
       setText('callerStatus', finalStatus.text);
       if (peer && !waitingForSignalAck) {
-        peer.destroy();
+        // Clear shared references before destroy: PeerJS may synchronously emit
+        // the signaling connection's close event during teardown.
+        const oldPeer = peer;
         peer = null;
         callerSignal = null;
+        oldPeer.destroy();
       }
       return;
     }
@@ -388,11 +391,16 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
               if (call) { try { call.close(); } catch {} }
               callClosed(call || null);
             } else if (message.type === 'CANCEL_ACK') {
-              try { callerSignal.send({ type: 'CANCEL_DONE' }); } catch {}
+              // The caller's End button waits for this acknowledgement. Complete
+              // the handshake, then tear down the old PeerJS session so a later
+              // tap on Call Now cannot inherit a stale signaling connection.
+              try { if (callerSignal && callerSignal.open) callerSignal.send({ type: 'CANCEL_DONE' }); } catch {}
               callerFinalStatus = { badge: 'CALL ENDED', text: 'You ended the call. You can call again using this link.' };
+              waitingForSignalAck = false;
               callClosed(activeCall || null);
             } else if (message.type === 'CALL_ENDED') {
               callerFinalStatus = { badge: 'CALL ENDED', text: 'The host ended the call. You can use this same link to call again.' };
+              waitingForSignalAck = false;
               callClosed(activeCall || null);
             }
           });
