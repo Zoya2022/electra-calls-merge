@@ -739,7 +739,18 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       if (call) { try { call.close(); } catch {} }
       // If there is no live signaling channel, no acknowledgement can arrive;
       // finish teardown immediately. Otherwise keep Call Now locked until ACK.
-      if (!canNotifyHost) callerEnding = false;
+      if (!canNotifyHost) {
+        // Keep Call Now locked briefly after a pre-signal cancellation. The
+        // End button and Call Now occupy the same position; without this
+        // cooldown a rapid/double tap can land on the newly revealed Call Now
+        // button while the previous PeerJS instance is still being destroyed.
+        const endedAttemptId = callerAttemptId;
+        setTimeout(() => {
+          if (callerAttemptId !== endedAttemptId || waitingForSignalAck) return;
+          callerEnding = false;
+          $('callBtn').disabled = false;
+        }, 1000);
+      }
       // Reset the visible UI immediately; keep signaling alive only until the
       // host acknowledges cancellation, then destroy the old PeerJS session.
       callClosed(call || null);
