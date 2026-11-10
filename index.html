@@ -728,7 +728,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       const thisPeer = peer;
       thisPeer.on('open', id => {
         if (peer !== thisPeer) return;
-        const link = location.origin + location.pathname + '?host=' + encodeURIComponent(id);
+        const link = location.origin + location.pathname + '?host=' + encodeURIComponent(id) + (debugMode ? '&debug=1' : '');
         setText('shareLink',link);
         $('copyBtn').onclick = async () => {
           try { await navigator.clipboard.writeText(link); setText('copyBtn','Copied!'); }
