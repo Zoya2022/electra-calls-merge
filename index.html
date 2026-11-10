@@ -85,7 +85,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
   const debugMode = params.get('debug') === '1';
   const traceMode = params.get('trace') === '1';
   // Version the generated caller URL so browsers cannot reuse an older cached page.
-  const buildVersion = '20261110-4';
+  const buildVersion = '20261110-5';
   const diagnosticEntries = [];
   function diag(event, details = {}) {
     if (!debugMode && !traceMode) return;
@@ -463,7 +463,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
     $('remoteAudio').srcObject = null; $('remoteAudio2').srcObject = null; $('callerRemoteAudio').srcObject = null;
     if (hostIdFromLink) {
       hide('callerInCall'); setCallerActions(false);
-      $('callBtn').disabled = false;
+      $('callBtn').disabled = Date.now() < callerCooldownUntil;
       setText('callerBadge','READY FOR NEXT CALLER');
       setText('callerStatus','Call ended. You can use this same link to call again.');
       if (peer && !waitingForSignalAck) { peer.destroy(); peer = null; }
@@ -683,7 +683,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
             if (peer) { peer.destroy(); peer = null; }
             callerSignal = null;
             stopLocalStream();
-            $('callBtn').disabled = false;
+            $('callBtn').disabled = Date.now() < callerCooldownUntil;
             setCallerActions(false);
             if (callerFinalStatus) {
               setText('callerBadge',callerFinalStatus.badge);
@@ -697,7 +697,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
             stopCallerTone();
             if (!isCurrentAttempt()) return;
             setText('callerStatus','Could not contact host: ' + err.message);
-            $('callBtn').disabled = false;
+            $('callBtn').disabled = Date.now() < callerCooldownUntil;
             setCallerActions(false);
             stopLocalStream();
           });
@@ -706,7 +706,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
           stopCallerTone();
           if (!isCurrentAttempt()) return;
           setText('callerStatus','Could not connect: ' + err.message);
-          $('callBtn').disabled = false;
+          $('callBtn').disabled = Date.now() < callerCooldownUntil;
           setCallerActions(false);
           stopLocalStream();
           if (peer) { peer.destroy(); peer = null; }
@@ -715,7 +715,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
         stopCallerTone();
         if (!isCurrentAttempt()) return;
         setText('callerStatus',error.message || 'Could not start microphone.');
-        $('callBtn').disabled = false; setCallerActions(false); stopLocalStream();
+        $('callBtn').disabled = Date.now() < callerCooldownUntil; setCallerActions(false); stopLocalStream();
       }
     });
     $('endCallerBtn').addEventListener('click', () => {
@@ -758,7 +758,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
         setTimeout(() => {
           if (callerAttemptId !== endedAttemptId || waitingForSignalAck) return;
           callerEnding = false;
-          $('callBtn').disabled = false;
+          $('callBtn').disabled = Date.now() < callerCooldownUntil;
         }, 1000);
       }
       // Reset the visible UI immediately; keep signaling alive only until the
