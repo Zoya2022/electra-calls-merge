@@ -141,6 +141,9 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
   const activeSignalConns = new Map();
   let conferenceMixer = null;
   let callerFinalStatus = null, waitingForSignalAck = false, callerAttemptId = 0, callerEnding = false;
+  // Mobile browsers can deliver a second tap after the End button has been
+  // replaced by Call Now. Keep Call Now locked briefly after every hang-up.
+  let callerCooldownUntil = 0, callerCooldownTimer = null;
   const ignoredCallerIds = new Set();
   let timerStarted = 0, timerHandle = null, connected = false, muted = false, deafened = false;
   const show = id => $(id).classList.remove('hidden');
@@ -380,7 +383,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       // Keep Call Now locked while the End Call handshake is pending. This
       // prevents a rapid second click from hitting the button that replaces
       // End Call in the same position and starting a fresh call accidentally.
-      $('callBtn').disabled = callerEnding;
+      $('callBtn').disabled = callerEnding || Date.now() < callerCooldownUntil;
       const finalStatus = callerFinalStatus || {
         badge: 'CALL ENDED',
         text: 'The call has ended. You can use this same link to call again.'
@@ -555,7 +558,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
     $('callerMuteBtn').addEventListener('click', () => setMicMuted(!muted));
     $('callerDeafenBtn').addEventListener('click', () => setDeafened(!deafened));
     $('callBtn').addEventListener('click', async () => {
-      if (callerEnding || $('callBtn').disabled) return;
+      if (callerEnding || Date.now() < callerCooldownUntil || $('callBtn').disabled) return;
       // Claim this attempt synchronously, before the first await. Otherwise an
       // immediate End tap can invalidate nothing, and the delayed audio-resume
       // continuation below can accidentally launch a fresh call afterwards.
@@ -725,6 +728,12 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       // from the previous attempt, which would skip invalidation and let the
       // pending 3-second CALL_REQUEST timer ring the host after End is tapped.
       ++callerAttemptId; // invalidate every pending async step from this attempt
+      callerCooldownUntil = Date.now() + 2000;
+      if (callerCooldownTimer) clearTimeout(callerCooldownTimer);
+      callerCooldownTimer = setTimeout(() => {
+        callerCooldownTimer = null;
+        if (!callerEnding && !activeCall && Date.now() >= callerCooldownUntil) $('callBtn').disabled = false;
+      }, 2050);
       diag('CALLER_END_CLICK', { newAttemptId: callerAttemptId, peerId: peer?.id || null, signalOpen: !!callerSignal?.open, activeCallPeer: activeCall?.peer || null });
       callerFinalStatus = { badge: 'CALL ENDED', text: 'You ended the call. You can call again using this link.' };
       const canNotifyHost = !!(callerSignal && callerSignal.open);
