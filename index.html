@@ -121,7 +121,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
   let peer = null, incomingCall = null, activeCall = null, secondCall = null, waitingCall = null, localStream = null, callerSignal = null, pendingCallerId = null, pendingSignalConn = null, waitingCallerId = null, waitingSignalConn = null;
   const activeSignalConns = new Map();
   let conferenceMixer = null;
-  let callerFinalStatus = null, waitingForSignalAck = false, callerAttemptId = 0;
+  let callerFinalStatus = null, waitingForSignalAck = false, callerAttemptId = 0, callerEnding = false;
   const ignoredCallerIds = new Set();
   let timerStarted = 0, timerHandle = null, connected = false, muted = false, deafened = false;
   const show = id => $(id).classList.remove('hidden');
@@ -358,7 +358,10 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       $('callerRemoteAudio').srcObject = null;
       hide('callerInCall');
       setCallerActions(false);
-      $('callBtn').disabled = false;
+      // Keep Call Now locked while the End Call handshake is pending. This
+      // prevents a rapid second click from hitting the button that replaces
+      // End Call in the same position and starting a fresh call accidentally.
+      $('callBtn').disabled = callerEnding;
       const finalStatus = callerFinalStatus || {
         badge: 'CALL ENDED',
         text: 'The call has ended. You can use this same link to call again.'
@@ -533,6 +536,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
     $('callerMuteBtn').addEventListener('click', () => setMicMuted(!muted));
     $('callerDeafenBtn').addEventListener('click', () => setDeafened(!deafened));
     $('callBtn').addEventListener('click', async () => {
+      if (callerEnding || $('callBtn').disabled) return;
       // Claim this attempt synchronously, before the first await. Otherwise an
       // immediate End tap can invalidate nothing, and the delayed audio-resume
       // continuation below can accidentally launch a fresh call afterwards.
@@ -639,8 +643,10 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
               try { if (callerSignal && callerSignal.open) callerSignal.send({ type: 'CANCEL_DONE' }); } catch {}
               callerFinalStatus = { badge: 'CALL ENDED', text: 'You ended the call. You can call again using this link.' };
               waitingForSignalAck = false;
+              callerEnding = false;
               callClosed(activeCall || null);
             } else if (message.type === 'CALL_ENDED') {
+              callerEnding = false;
               callerFinalStatus = { badge: 'CALL ENDED', text: 'The host ended the call. You can use this same link to call again.' };
               waitingForSignalAck = false;
               callClosed(activeCall || null);
@@ -651,6 +657,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
             if (!isCurrentAttempt() || callerSignal !== thisSignal) return;
             if (activeCall) return;
             waitingForSignalAck = false;
+            callerEnding = false;
             if (peer) { peer.destroy(); peer = null; }
             callerSignal = null;
             stopLocalStream();
@@ -690,6 +697,8 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       }
     });
     $('endCallerBtn').addEventListener('click', () => {
+      if (callerEnding) return;
+      callerEnding = true;
       stopCallerTone();
       // Mark the attempt as ending before closing MediaConnection. Its close
       // callback must not be mistaken for a fresh/remote call termination.
@@ -703,10 +712,14 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       setText('callerBadge','CALL ENDED');
       setText('callerStatus','Ending call…');
       setCallerActions(false);
+      $('callBtn').disabled = true;
       diag('CALLER_SEND_CANCEL', { canNotifyHost, peerId: peer?.id || null, signalPeer: callerSignal?.peer || null });
       try { if (canNotifyHost) callerSignal.send({ type: 'CANCEL' }); } catch {}
       const call = activeCall;
       if (call) { try { call.close(); } catch {} }
+      // If there is no live signaling channel, no acknowledgement can arrive;
+      // finish teardown immediately. Otherwise keep Call Now locked until ACK.
+      if (!canNotifyHost) callerEnding = false;
       // Reset the visible UI immediately; keep signaling alive only until the
       // host acknowledges cancellation, then destroy the old PeerJS session.
       callClosed(call || null);
@@ -715,9 +728,10 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       if (canNotifyHost) setTimeout(() => {
         if (waitingForSignalAck && callerFinalStatus?.badge === 'CALL ENDED') {
           waitingForSignalAck = false;
+          callerEnding = false;
           callClosed(null);
         }
-      }, 1500);
+      }, 2500);
     });
   } else {
     bindVolume('hostVolume','remoteAudio','hostVolumeValue');
