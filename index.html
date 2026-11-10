@@ -82,6 +82,42 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
   const $ = id => document.getElementById(id);
   const params = new URLSearchParams(location.search);
   const hostIdFromLink = params.get('host');
+  const debugMode = params.get('debug') === '1';
+  const diagnosticEntries = [];
+  function diag(event, details = {}) {
+    if (!debugMode) return;
+    const line = new Date().toISOString() + ' | ' + (hostIdFromLink ? 'CALLER' : 'HOST') +
+      ' | ' + event + ' | ' + JSON.stringify(details);
+    diagnosticEntries.push(line);
+    if (diagnosticEntries.length > 120) diagnosticEntries.shift();
+    const output = document.getElementById('electraDiagnosticOutput');
+    if (output) output.value = diagnosticEntries.join('\\n');
+    console.info('[Electra diagnostic]', line);
+  }
+  if (debugMode) {
+    const panel = document.createElement('details');
+    panel.style.cssText = 'margin:14px 0;padding:10px 12px;border:1px solid #b7aaff;border-radius:12px;background:#0a1020;text-align:left';
+    const summary = document.createElement('summary');
+    summary.textContent = 'Temporary diagnostics (tap to open)';
+    summary.style.cssText = 'cursor:pointer;color:#c8c0ff;font-weight:700';
+    const output = document.createElement('textarea');
+    output.id = 'electraDiagnosticOutput';
+    output.readOnly = true;
+    output.rows = 8;
+    output.style.cssText = 'display:block;width:100%;margin-top:10px;background:#080d18;color:#e8edff;border:1px solid #34425f;border-radius:8px;padding:8px;font:11px/1.4 monospace';
+    const copy = document.createElement('button');
+    copy.textContent = 'Copy diagnostic log';
+    copy.style.cssText = 'margin-top:8px;background:#26334b;color:white;padding:9px 12px;border-radius:8px';
+    copy.addEventListener('click', async () => {
+      output.value = diagnosticEntries.join('\\n');
+      output.select();
+      try { await navigator.clipboard.writeText(output.value); copy.textContent = 'Copied'; }
+      catch { copy.textContent = 'Select the log above and copy'; }
+    });
+    panel.append(summary, output, copy);
+    document.querySelector('.card').append(panel);
+    diag('PAGE_READY', { url: location.pathname + location.search });
+  }
   let peer = null, incomingCall = null, activeCall = null, secondCall = null, waitingCall = null, localStream = null, callerSignal = null, pendingCallerId = null, pendingSignalConn = null, waitingCallerId = null, waitingSignalConn = null;
   const activeSignalConns = new Map();
   let conferenceMixer = null;
@@ -501,6 +537,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       // immediate End tap can invalidate nothing, and the delayed audio-resume
       // continuation below can accidentally launch a fresh call afterwards.
       const attemptId = ++callerAttemptId;
+      diag('CALL_NOW_CLICK', { attemptId, peerId: peer?.id || null });
       const isCurrentAttempt = () => attemptId === callerAttemptId;
       const CallerAudioContext = window.AudioContext || window.webkitAudioContext;
       if (CallerAudioContext && !callerToneContext) callerToneContext = new CallerAudioContext();
@@ -525,7 +562,9 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
         localStream = acquiredStream;
         peer = new Peer();
         const thisPeer = peer;
-        thisPeer.on('open', () => {
+        diag('CALLER_PEER_CREATED', { attemptId, peerId: thisPeer.id || null });
+        thisPeer.on('open', id => {
+          diag('CALLER_PEER_OPEN', { attemptId, peerId: id });
           if (!isCurrentAttempt() || peer !== thisPeer) { thisPeer.destroy(); return; }
           setText('callerStatus','Contacting host…');
           // Establish a reliable data channel first. The host only displays
@@ -543,6 +582,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
             show('endCallerBtn');
           };
           thisSignal.on('open', () => {
+            diag('CALLER_SIGNAL_OPEN', { attemptId, peerId: thisPeer.id, signalPeer: thisSignal.peer });
             if (!isCurrentAttempt() || peer !== thisPeer || callerSignal !== thisSignal || !thisSignal.open) {
               try { thisSignal.close(); } catch {}
               return;
@@ -555,11 +595,13 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
             setTimeout(() => {
               if (!isCurrentAttempt() || peer !== thisPeer ||
                   callerSignal !== thisSignal || !thisSignal.open) return;
+              diag('CALLER_SEND_CALL_REQUEST', { attemptId, peerId: thisPeer.id, signalOpen: thisSignal.open });
               thisSignal.send({ type: 'CALL_REQUEST' });
               setText('callerStatus','Requesting to join… you can still cancel.');
             }, 3000);
           });
           thisSignal.on('data', message => {
+            diag('CALLER_RECEIVE_SIGNAL', { attemptId, peerId: thisPeer.id, type: message?.type });
             if ((!isCurrentAttempt() && message?.type !== 'CANCEL_ACK') || callerSignal !== thisSignal || !message || typeof message !== 'object') return;
             if (message.type === 'REJECT') {
               stopCallerTone();
@@ -653,6 +695,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       // callback must not be mistaken for a fresh/remote call termination.
       if (callerFinalStatus && callerFinalStatus.badge === 'CALL ENDED' && !$('endCallerBtn').disabled) return;
       ++callerAttemptId; // invalidate every pending async step from this attempt
+      diag('CALLER_END_CLICK', { newAttemptId: callerAttemptId, peerId: peer?.id || null, signalOpen: !!callerSignal?.open, activeCallPeer: activeCall?.peer || null });
       callerFinalStatus = { badge: 'CALL ENDED', text: 'You ended the call. You can call again using this link.' };
       const canNotifyHost = !!(callerSignal && callerSignal.open);
       waitingForSignalAck = canNotifyHost;
@@ -660,6 +703,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       setText('callerBadge','CALL ENDED');
       setText('callerStatus','Ending call…');
       setCallerActions(false);
+      diag('CALLER_SEND_CANCEL', { canNotifyHost, peerId: peer?.id || null, signalPeer: callerSignal?.peer || null });
       try { if (canNotifyHost) callerSignal.send({ type: 'CANCEL' }); } catch {}
       const call = activeCall;
       if (call) { try { call.close(); } catch {} }
@@ -708,13 +752,16 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       // media-call close events alone cannot reliably signal a caller hanging
       // up before the host answers.
       thisPeer.on('connection', conn => {
+        diag('HOST_SIGNAL_CONNECTION', { peerId: conn.peer });
         if (peer !== thisPeer) { conn.close(); return; }
         conn.on('data', message => {
+          diag('HOST_RECEIVE_SIGNAL', { peerId: conn.peer, type: message?.type, ignored: ignoredCallerIds.has(conn.peer) });
           if (!message || typeof message !== 'object') return;
           if (message.type === 'CALL_REQUEST') {
             // A caller may cancel while a request is in flight. Do not let a late
             // or duplicate CALL_REQUEST from that same PeerJS session restart ringing.
             if (ignoredCallerIds.has(conn.peer)) {
+              diag('HOST_IGNORED_CALL_REQUEST', { peerId: conn.peer });
               try { if (conn.open) conn.send({ type: 'CANCEL_ACK' }); } catch {}
               return;
             }
@@ -742,6 +789,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
             pendingCallerId = conn.peer;
             pendingSignalConn = conn;
             try { conn.send({ type: 'CALL_REQUEST_ACK' }); } catch {}
+            diag('HOST_START_INCOMING_RING', { peerId: conn.peer });
             startRingtone('incoming');
             if (incomingCall && incomingCall.peer === conn.peer) {
               show('incoming');
@@ -752,6 +800,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
             // Handle cancellation even if CALL_REQUEST/media signaling is still
             // arriving. Always acknowledge this caller's own signal connection.
             ignoredCallerIds.add(conn.peer);
+            diag('HOST_CANCEL_PROCESSED', { peerId: conn.peer, pendingCallerId, activePeer: activeCall?.peer || null, secondPeer: secondCall?.peer || null });
             const cancelledActive = activeCall?.peer === conn.peer ? activeCall
               : secondCall?.peer === conn.peer ? secondCall : null;
             const cancelledWaiting = waitingCall?.peer === conn.peer ? waitingCall : null;
@@ -815,6 +864,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
         });
       });
       thisPeer.on('call', call => {
+        diag('HOST_MEDIA_CALL', { peerId: call.peer, ignored: ignoredCallerIds.has(call.peer) });
         if (peer !== thisPeer) { call.close(); return; }
         // A media call can arrive after its separate signaling request was
         // cancelled/rejected. Never let that late call become a stale ring.
