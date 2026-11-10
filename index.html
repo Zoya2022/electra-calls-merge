@@ -91,7 +91,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
     diagnosticEntries.push(line);
     if (diagnosticEntries.length > 120) diagnosticEntries.shift();
     const output = document.getElementById('electraDiagnosticOutput');
-    if (output) output.value = diagnosticEntries.join('\\n');
+    if (output) output.value = diagnosticEntries.join(String.fromCharCode(10));
     console.info('[Electra diagnostic]', line);
   }
   if (debugMode) {
@@ -109,7 +109,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
     copy.textContent = 'Copy diagnostic log';
     copy.style.cssText = 'margin-top:8px;background:#26334b;color:white;padding:9px 12px;border-radius:8px';
     copy.addEventListener('click', async () => {
-      output.value = diagnosticEntries.join('\\n');
+      output.value = diagnosticEntries.join(String.fromCharCode(10));
       output.select();
       try { await navigator.clipboard.writeText(output.value); copy.textContent = 'Copied'; }
       catch { copy.textContent = 'Select the log above and copy'; }
