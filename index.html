@@ -83,11 +83,12 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
   const params = new URLSearchParams(location.search);
   const hostIdFromLink = params.get('host');
   const debugMode = params.get('debug') === '1';
+  const traceMode = params.get('trace') === '1';
   // Version the generated caller URL so browsers cannot reuse an older cached page.
   const buildVersion = '20261110-3';
   const diagnosticEntries = [];
   function diag(event, details = {}) {
-    if (!debugMode) return;
+    if (!debugMode && !traceMode) return;
     const line = new Date().toISOString() + ' | ' + (hostIdFromLink ? 'CALLER' : 'HOST') +
       ' | ' + event + ' | ' + JSON.stringify(details);
     diagnosticEntries.push(line);
@@ -112,7 +113,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
   window.addEventListener('pagehide', event => {
     if (hostIdFromLink) diag('CALLER_PAGEHIDE', { persisted: event.persisted, href: location.href, time: Date.now() });
   });
-  if (debugMode) {
+  if (debugMode || traceMode) {
     const panel = document.createElement('details');
     panel.style.cssText = 'margin:14px 0;padding:10px 12px;border:1px solid #b7aaff;border-radius:12px;background:#0a1020;text-align:left';
     const summary = document.createElement('summary');
