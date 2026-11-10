@@ -439,8 +439,8 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
   function attachCall(call) {
     activeCall = call;
     const callerAttemptAtAttach = callerAttemptId;
-    const isThisCallCurrent = () => !hostIdFromLink ||
-      (callerAttemptAtAttach === callerAttemptId && activeCall === call);
+    const isThisCallCurrent = () => activeCall === call &&
+      (!hostIdFromLink || callerAttemptAtAttach === callerAttemptId);
     const audio = $(hostIdFromLink ? 'callerRemoteAudio' : 'remoteAudio');
     call.on('stream', stream => {
       // A WebRTC stream may arrive after End Call. Never let an old attempt
