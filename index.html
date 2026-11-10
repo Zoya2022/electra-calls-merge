@@ -646,6 +646,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
               callerEnding = false;
               callClosed(activeCall || null);
             } else if (message.type === 'CALL_ENDED') {
+              callerEnding = false;
               callerFinalStatus = { badge: 'CALL ENDED', text: 'The host ended the call. You can use this same link to call again.' };
               waitingForSignalAck = false;
               callClosed(activeCall || null);
@@ -656,6 +657,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
             if (!isCurrentAttempt() || callerSignal !== thisSignal) return;
             if (activeCall) return;
             waitingForSignalAck = false;
+            callerEnding = false;
             if (peer) { peer.destroy(); peer = null; }
             callerSignal = null;
             stopLocalStream();
@@ -715,6 +717,9 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       try { if (canNotifyHost) callerSignal.send({ type: 'CANCEL' }); } catch {}
       const call = activeCall;
       if (call) { try { call.close(); } catch {} }
+      // If there is no live signaling channel, no acknowledgement can arrive;
+      // finish teardown immediately. Otherwise keep Call Now locked until ACK.
+      if (!canNotifyHost) callerEnding = false;
       // Reset the visible UI immediately; keep signaling alive only until the
       // host acknowledges cancellation, then destroy the old PeerJS session.
       callClosed(call || null);
