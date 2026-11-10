@@ -85,7 +85,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
   const debugMode = params.get('debug') === '1';
   const traceMode = params.get('trace') === '1';
   // Version the generated caller URL so browsers cannot reuse an older cached page.
-  const buildVersion = '20261110-5';
+  const buildVersion = '20261110-6';
   const diagnosticEntries = [];
   function diag(event, details = {}) {
     if (!debugMode && !traceMode) return;
@@ -872,13 +872,18 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
               waitingCallerId = null;
               if (waitingSignalConn === conn) waitingSignalConn = null;
               hide('secondIncoming');
+              clearHostNotice();
             }
             try { if (conn.open) conn.send({ type: 'CANCEL_ACK' }); } catch {}
             if (cancelledActive) {
               try { cancelledActive.close(); } catch {}
               callClosed(cancelledActive);
             } else {
-              if (cancelledWaiting === waitingCall) waitingCall = null;
+              if (cancelledWaiting === waitingCall) {
+                waitingCall = null;
+                hide('secondIncoming');
+                clearHostNotice();
+              }
               if (cancelledIncoming === incomingCall) incomingCall = null;
               try { if (cancelledWaiting) cancelledWaiting.close(); } catch {}
               try { if (cancelledIncoming) cancelledIncoming.close(); } catch {}
