@@ -94,6 +94,22 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
     if (output) output.value = diagnosticEntries.join(String.fromCharCode(10));
     console.info('[Electra diagnostic]', line);
   }
+  // Caller lifecycle diagnostics: identify whether a fresh trusted click or page reload
+  // is creating the next Peer after End Call. This does not change call behavior.
+  document.addEventListener('click', event => {
+    if (!hostIdFromLink) return;
+    const target = event.target && event.target.closest ? event.target.closest('#callBtn, #endCallerBtn') : null;
+    if (target) diag('CALLER_BUTTON_DOM_CLICK', {
+      button: target.id, trusted: event.isTrusted, disabled: !!target.disabled,
+      callerEnding, attemptId: callerAttemptId, peerId: peer?.id || null
+    });
+  }, true);
+  window.addEventListener('pageshow', event => {
+    if (hostIdFromLink) diag('CALLER_PAGESHOW', { persisted: event.persisted, href: location.href, time: Date.now() });
+  });
+  window.addEventListener('pagehide', event => {
+    if (hostIdFromLink) diag('CALLER_PAGEHIDE', { persisted: event.persisted, href: location.href, time: Date.now() });
+  });
   if (debugMode) {
     const panel = document.createElement('details');
     panel.style.cssText = 'margin:14px 0;padding:10px 12px;border:1px solid #b7aaff;border-radius:12px;background:#0a1020;text-align:left';
