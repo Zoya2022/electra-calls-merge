@@ -497,13 +497,17 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
     $('callerMuteBtn').addEventListener('click', () => setMicMuted(!muted));
     $('callerDeafenBtn').addEventListener('click', () => setDeafened(!deafened));
     $('callBtn').addEventListener('click', async () => {
+      // Claim this attempt synchronously, before the first await. Otherwise an
+      // immediate End tap can invalidate nothing, and the delayed audio-resume
+      // continuation below can accidentally launch a fresh call afterwards.
+      const attemptId = ++callerAttemptId;
+      const isCurrentAttempt = () => attemptId === callerAttemptId;
       const CallerAudioContext = window.AudioContext || window.webkitAudioContext;
       if (CallerAudioContext && !callerToneContext) callerToneContext = new CallerAudioContext();
       stopCallerTone();
       if (callerToneContext && callerToneContext.state !== 'running') { try { await callerToneContext.resume(); } catch (error) { console.warn('Caller audio unlock failed:', error); } }
+      if (!isCurrentAttempt()) return;
       startCallerTone('ringback');
-      const attemptId = ++callerAttemptId;
-      const isCurrentAttempt = () => attemptId === callerAttemptId;
       callerFinalStatus = null;
       waitingForSignalAck = false;
       $('endCallerBtn').disabled = false;
