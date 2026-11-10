@@ -712,6 +712,12 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
         conn.on('data', message => {
           if (!message || typeof message !== 'object') return;
           if (message.type === 'CALL_REQUEST') {
+            // A caller may cancel while a request is in flight. Do not let a late
+            // or duplicate CALL_REQUEST from that same PeerJS session restart ringing.
+            if (ignoredCallerIds.has(conn.peer)) {
+              try { if (conn.open) conn.send({ type: 'CANCEL_ACK' }); } catch {}
+              return;
+            }
             // Ignore delayed/reordered requests for a caller already accepted.
             if ((activeCall && activeCall.peer === conn.peer) || (secondCall && secondCall.peer === conn.peer)) return;
             if (activeCall) {
