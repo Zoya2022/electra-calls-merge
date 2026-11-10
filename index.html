@@ -543,11 +543,17 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
               try { thisSignal.close(); } catch {}
               return;
             }
-            // Ask the host first. Do not start WebRTC media until the host has
-            // acknowledged this request; a caller can cancel safely meanwhile.
-            thisSignal.send({ type: 'CALL_REQUEST' });
-            setText('callerStatus','Requesting to join… you can cancel at any time.');
+            // Give accidental visitors a short cancellation window before
+            // notifying the host. Ending during this window sends no request
+            // and cannot create a media call or ring the host dashboard.
+            setText('callerStatus','Getting ready… you can cancel now. The host will not be notified yet.');
             setCallerActions(true);
+            setTimeout(() => {
+              if (!isCurrentAttempt() || peer !== thisPeer ||
+                  callerSignal !== thisSignal || !thisSignal.open) return;
+              thisSignal.send({ type: 'CALL_REQUEST' });
+              setText('callerStatus','Requesting to join… you can still cancel.');
+            }, 3000);
           });
           thisSignal.on('data', message => {
             if ((!isCurrentAttempt() && message?.type !== 'CANCEL_ACK') || callerSignal !== thisSignal || !message || typeof message !== 'object') return;
