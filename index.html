@@ -85,7 +85,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
   const debugMode = params.get('debug') === '1';
   const traceMode = params.get('trace') === '1';
   // Version the generated caller URL so browsers cannot reuse an older cached page.
-  const buildVersion = '20261110-6';
+  const buildVersion = '20261110-7';;
   const diagnosticEntries = [];
   function diag(event, details = {}) {
     if (!debugMode && !traceMode) return;
@@ -238,10 +238,16 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
   // Caller-side ringback and busy tones use a separate Web Audio context.
   // They never connect to, mute, or alter the PeerJS voice stream.
   let callerToneContext = null, callerToneTimer = null, callerToneGeneration = 0;
+  const activeCallerToneOscillators = new Set();
   function stopCallerTone() {
     callerToneGeneration++;
     if (callerToneTimer) clearInterval(callerToneTimer);
     callerToneTimer = null;
+    // Stop any tone already scheduled in Web Audio, not just future pulses.
+    for (const oscillator of activeCallerToneOscillators) {
+      try { oscillator.stop(); } catch {}
+    }
+    activeCallerToneOscillators.clear();
   }
   function callerTonePulse(frequencies, duration) {
     if (!callerToneContext || callerToneContext.state !== 'running') return;
@@ -257,9 +263,13 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
       oscillator.connect(gain);
       gain.connect(callerToneContext.destination);
+      activeCallerToneOscillators.add(oscillator);
       oscillator.start(startAt);
       oscillator.stop(startAt + duration + 0.01);
-      oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); };
+      oscillator.onended = () => {
+        activeCallerToneOscillators.delete(oscillator);
+        try { oscillator.disconnect(); gain.disconnect(); } catch {}
+      };
     });
   }
   async function startCallerTone(kind) {
