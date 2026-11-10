@@ -528,18 +528,26 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
           // an incoming notification after receiving this explicit request.
           callerSignal = thisPeer.connect(hostIdFromLink, { reliable: true });
           const thisSignal = callerSignal;
+          let mediaCallStarted = false;
+          const startMediaCall = () => {
+            if (mediaCallStarted || !isCurrentAttempt() || peer !== thisPeer ||
+                callerSignal !== thisSignal || !thisSignal.open) return;
+            mediaCallStarted = true;
+            const call = thisPeer.call(hostIdFromLink, localStream);
+            if (!call) throw new Error('Could not start the call. Please try again.');
+            attachCall(call);
+            show('endCallerBtn');
+          };
           thisSignal.on('open', () => {
             if (!isCurrentAttempt() || peer !== thisPeer || callerSignal !== thisSignal || !thisSignal.open) {
               try { thisSignal.close(); } catch {}
               return;
             }
+            // Ask the host first. Do not start WebRTC media until the host has
+            // acknowledged this request; a caller can cancel safely meanwhile.
             thisSignal.send({ type: 'CALL_REQUEST' });
-            setText('callerStatus','Calling host… please wait for them to accept.');
+            setText('callerStatus','Requesting to join… you can cancel at any time.');
             setCallerActions(true);
-            const call = thisPeer.call(hostIdFromLink, localStream);
-            if (!call) throw new Error('Could not start the call. Please try again.');
-            attachCall(call);
-            show('endCallerBtn');
           });
           thisSignal.on('data', message => {
             if ((!isCurrentAttempt() && message?.type !== 'CANCEL_ACK') || callerSignal !== thisSignal || !message || typeof message !== 'object') return;
@@ -551,7 +559,10 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
               const call = activeCall;
               if (call) { try { call.close(); } catch {} }
               callClosed(call || null);
+            } else if (message.type === 'CALL_REQUEST_ACK') {
+              startMediaCall();
             } else if (message.type === 'WAITING') {
+              startMediaCall();
               startCallerTone('engage');
               setCallerActions(true);
               setText('callerBadge','YOU ARE IN THE QUEUE');
@@ -701,10 +712,10 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
               }
               waitingCallerId = conn.peer;
               waitingSignalConn = conn;
+              try { conn.send({ type: 'WAITING' }); } catch {}
               startRingtone('waiting');
               showHostNotice('🔔 SECOND CALLER WAITING — You can accept them without ending the current call.');
               if (waitingCall && waitingCall.peer === conn.peer) show('secondIncoming');
-              try { conn.send({ type: 'WAITING' }); } catch {}
               return;
             }
             if (pendingCallerId && pendingCallerId !== conn.peer) {
@@ -714,6 +725,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
             }
             pendingCallerId = conn.peer;
             pendingSignalConn = conn;
+            try { conn.send({ type: 'CALL_REQUEST_ACK' }); } catch {}
             startRingtone('incoming');
             if (incomingCall && incomingCall.peer === conn.peer) {
               show('incoming');
