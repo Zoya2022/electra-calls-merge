@@ -702,7 +702,9 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       stopCallerTone();
       // Mark the attempt as ending before closing MediaConnection. Its close
       // callback must not be mistaken for a fresh/remote call termination.
-      if (callerFinalStatus && callerFinalStatus.badge === 'CALL ENDED' && !$('endCallerBtn').disabled) return;
+      // Do not gate this on callerFinalStatus: it can still contain CALL ENDED
+      // from the previous attempt, which would skip invalidation and let the
+      // pending 3-second CALL_REQUEST timer ring the host after End is tapped.
       ++callerAttemptId; // invalidate every pending async step from this attempt
       diag('CALLER_END_CLICK', { newAttemptId: callerAttemptId, peerId: peer?.id || null, signalOpen: !!callerSignal?.open, activeCallPeer: activeCall?.peer || null });
       callerFinalStatus = { badge: 'CALL ENDED', text: 'You ended the call. You can call again using this link.' };
