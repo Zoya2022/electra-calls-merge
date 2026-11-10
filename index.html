@@ -580,7 +580,9 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
       stopCallerTone();
       if (callerToneContext && callerToneContext.state !== 'running') { try { await callerToneContext.resume(); } catch (error) { console.warn('Caller audio unlock failed:', error); } }
       if (!isCurrentAttempt()) return;
-      startCallerTone('ringback');
+      // Do not play ringback while the caller is still preparing the
+      // microphone/PeerJS connection. Start it only after the host confirms
+      // that the incoming call request has arrived.
       callerFinalStatus = null;
       waitingForSignalAck = false;
       $('endCallerBtn').disabled = false;
@@ -648,6 +650,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
               if (call) { try { call.close(); } catch {} }
               callClosed(call || null);
             } else if (message.type === 'CALL_REQUEST_ACK') {
+              startCallerTone('ringback');
               startMediaCall();
             } else if (message.type === 'WAITING') {
               startMediaCall();
