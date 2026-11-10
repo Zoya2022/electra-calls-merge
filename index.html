@@ -85,7 +85,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
   const debugMode = params.get('debug') === '1';
   const traceMode = params.get('trace') === '1';
   // Version the generated caller URL so browsers cannot reuse an older cached page.
-  const buildVersion = '20261110-3';
+  const buildVersion = '20261110-4';
   const diagnosticEntries = [];
   function diag(event, details = {}) {
     if (!debugMode && !traceMode) return;
