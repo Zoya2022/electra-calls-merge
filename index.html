@@ -819,7 +819,9 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
         // A media call can arrive after its separate signaling request was
         // cancelled/rejected. Never let that late call become a stale ring.
         if (ignoredCallerIds.has(call.peer)) {
-          ignoredCallerIds.delete(call.peer);
+          // Keep the tombstone for this PeerJS ID for the lifetime of the host
+          // session. Removing it here lets a later duplicate CALL_REQUEST from
+          // the same cancelled caller restart the incoming ringtone.
           call.close();
           return;
         }
