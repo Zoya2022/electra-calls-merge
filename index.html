@@ -614,12 +614,36 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
             if (mediaCallStarted || !isCurrentAttempt() || peer !== thisPeer ||
                 callerSignal !== thisSignal || !thisSignal.open) return;
             mediaCallStarted = true;
+            if (callerFallbackTimer) { clearTimeout(callerFallbackTimer); callerFallbackTimer = null; }
             const call = thisPeer.call(hostIdFromLink, localStream);
             if (!call) throw new Error('Could not start the call. Please try again.');
             attachCall(call);
             show('endCallerBtn');
           };
+          // If the reliable data channel never opens, try the media connection
+          // directly. The host recognizes this tagged call and shows the usual
+          // incoming-call controls; the normal signaling path remains preferred.
+          const startCallerMediaFallback = () => {
+            if (mediaCallStarted || !isCurrentAttempt() || peer !== thisPeer ||
+                callerSignal !== thisSignal) return;
+            mediaCallStarted = true;
+            diag('CALLER_MEDIA_FALLBACK', { attemptId, peerId: thisPeer.id });
+            const call = thisPeer.call(hostIdFromLink, localStream, {
+              metadata: { electraFallback: true }
+            });
+            if (!call) {
+              setText('callerStatus','Could not start the call. Please try again.');
+              setCallerActions(false);
+              return;
+            }
+            setText('callerStatus','Connecting to host…');
+            setCallerActions(true);
+            attachCall(call);
+            show('endCallerBtn');
+          };
+          callerFallbackTimer = setTimeout(startCallerMediaFallback, 8000);
           thisSignal.on('open', () => {
+            if (callerFallbackTimer) { clearTimeout(callerFallbackTimer); callerFallbackTimer = null; }
             diag('CALLER_SIGNAL_OPEN', { attemptId, peerId: thisPeer.id, signalPeer: thisSignal.peer });
             if (!isCurrentAttempt() || peer !== thisPeer || callerSignal !== thisSignal || !thisSignal.open) {
               try { thisSignal.close(); } catch {}
@@ -709,7 +733,8 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
           thisSignal.on('error', err => {
             stopCallerTone();
             if (!isCurrentAttempt()) return;
-            setText('callerStatus','Could not contact host: ' + err.message);
+            startCallerMediaFallback();
+            setText('callerStatus','Trying an alternate connection…');
             $('callBtn').disabled = Date.now() < callerCooldownUntil;
             setCallerActions(false);
             stopLocalStream();
@@ -951,6 +976,13 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
         // Reject PeerJS IDs previously blocked by the host on this browser.
         const blockedCallerIds = JSON.parse(localStorage.getItem('electraBlockedCallerIds') || '[]');
         if (blockedCallerIds.includes(call.peer)) { call.close(); return; }
+        // A caller may reach the media path even when PeerJS's data channel
+        // cannot open. Only tagged fallback calls may bypass CALL_REQUEST.
+        if (call.metadata && call.metadata.electraFallback === true) {
+          if (activeCall) waitingCallerId = call.peer;
+          else pendingCallerId = call.peer;
+          diag('HOST_MEDIA_FALLBACK_ACCEPTED', { peerId: call.peer, queued: !!activeCall });
+        }
         // Clear references left behind by a caller who disconnected abruptly.
         if (activeCall && activeCall.open === false) callClosed(activeCall);
         if (incomingCall && incomingCall.open === false) incomingCall = null;
