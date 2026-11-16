@@ -141,6 +141,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
   const activeSignalConns = new Map();
   let conferenceMixer = null;
   let callerFinalStatus = null, waitingForSignalAck = false, callerAttemptId = 0, callerEnding = false;
+  let callerFallbackTimer = null;
   // Mobile browsers can deliver a second tap after the End button has been
   // replaced by Call Now. Keep Call Now locked briefly after every hang-up.
   let callerCooldownUntil = 0, callerCooldownTimer = null;
@@ -372,6 +373,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
     localStream = null;
   }
   function callClosed(call) {
+    if (callerFallbackTimer) { clearTimeout(callerFallbackTimer); callerFallbackTimer = null; }
     // Caller-side teardown is deliberately independent from PeerJS close timing.
     // The signaling channel is the fallback for pre-answer cancellation/rejection
     // and for a host ending an already connected call.
@@ -626,6 +628,7 @@ footer{text-align:center;color:#75839d;font-size:.76rem;margin-top:17px}
           const startCallerMediaFallback = () => {
             if (mediaCallStarted || !isCurrentAttempt() || peer !== thisPeer ||
                 callerSignal !== thisSignal) return;
+            if (callerFallbackTimer) { clearTimeout(callerFallbackTimer); callerFallbackTimer = null; }
             mediaCallStarted = true;
             diag('CALLER_MEDIA_FALLBACK', { attemptId, peerId: thisPeer.id });
             const call = thisPeer.call(hostIdFromLink, localStream, {
